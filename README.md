@@ -22,6 +22,24 @@ A bar button opens a panel with:
 
 Tested with a Litra Glow. The `litra` CLI also supports Beam and Beam LX; those should work but are untested here.
 
+## Permissions
+
+Talking to the light needs access to its `/dev/hidraw*` device. The `litra` package installs a udev rule for it (`/usr/lib/udev/rules.d/99-litra.rules`, group `video`, mode `0660`), and on the author's machine that was enough: `litra devices` worked right after installing, without being in the `video` group.
+
+If `litra devices` says permission denied:
+
+```bash
+sudo udevadm control --reload-rules
+sudo udevadm trigger --subsystem-match=hidraw   # or unplug and replug the light
+```
+
+If that isn't enough, copy the packaged rule and add yourself to the `video` group, then log out and back in:
+
+```bash
+sudo cp /usr/share/litra/99-litra.rules /etc/udev/rules.d/
+sudo usermod -aG video "$USER"
+```
+
 ## Install
 
 ```bash
