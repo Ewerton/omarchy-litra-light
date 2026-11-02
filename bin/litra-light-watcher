@@ -87,19 +87,34 @@ stop_watch() {
 start_watch() {
   stop_watch
   mapfile -t nodes < <("$CTL" cameras | jq -r '.[].node')
+  # pdeathsig: the kernel stops inotifywait when this script dies, even on SIGKILL
+  # (a shell restart), so it can't be left running with no one reading it.
   coproc WATCH {
-    exec inotifywait -m -q -e open,close,close_write,moved_to,delete_self \
+    exec setpriv --pdeathsig TERM inotifywait -m -q -e open,close,close_write,moved_to,delete_self \
       "${nodes[@]}" "$CONF_DIR" 2>/dev/null
   }
 }
 
 cleanup() {
   stop_watch
+  [[ "$(cat "$PIDFILE" 2>/dev/null)" == "$$" ]] && rm -f "$PIDFILE"
   exit 0
 }
 trap cleanup TERM INT
 
 mkdir -p "$STATE_DIR" "$CONF_DIR"
+
+# One watcher at a time: a plugin reload or update starts a new one, which takes
+# over from any older copy still running (so it also runs the new code).
+PIDFILE="$STATE_DIR/watcher.pid"
+old=$(cat "$PIDFILE" 2>/dev/null)
+if [[ -n "$old" && "$old" != "$$" ]] && grep -qa litra-light-watcher "/proc/$old/cmdline" 2>/dev/null; then
+  kill "$old" 2>/dev/null
+  for _ in 1 2 3 4 5 6 7 8 9 10; do [[ -d "/proc/$old" ]] || break; sleep 0.2; done
+  [[ -d "/proc/$old" ]] && kill -9 "$old" 2>/dev/null
+fi
+echo $$ >"$PIDFILE"
+
 set_state off
 start_watch
 
