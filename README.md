@@ -2,6 +2,8 @@
 
 An [Omarchy](https://omarchy.org) shell plugin that turns a Logitech Litra light on while your webcam is in use, and off when it isn't.
 
+![Litra Light panel](preview.png)
+
 A bar button opens a panel with:
 
 - a switch for the camera trigger
