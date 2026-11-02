@@ -34,6 +34,14 @@ Then add **Litra Light** to the bar if it isn't there already:
 omarchy bar put ewer.litra-light --section right
 ```
 
+## Remove
+
+```bash
+omarchy plugin remove ewer.litra-light
+```
+
+This stops the watcher and takes the widget off the bar. The plugin only ever writes `~/.config/litra-light/config.json`; delete `~/.config/litra-light` too if you want its settings gone. Nothing else in your configuration is changed.
+
 ## How it works
 
 `Service.qml` keeps `bin/litra-light-watcher` running. It watches the camera device nodes with inotify and checks them with `fuser`. When a selected camera has been open for 2 seconds the light turns on, and it turns off 3 seconds after the last one closes, so apps that only probe the camera and back-to-back calls don't flicker the light.
