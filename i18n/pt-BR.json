@@ -1,0 +1,15 @@
+{
+  "title": "Litra Light",
+  "status.on": "Ligada",
+  "status.off": "Desligada",
+  "status.disabled": "Gatilho da câmera desativado",
+  "trigger.label": "Ligar com a câmera",
+  "trigger.description": "Luz acesa enquanto uma câmera selecionada estiver em uso",
+  "brightness": "Intensidade",
+  "temperature": "Temperatura de cor",
+  "cameras": "Câmeras que acionam a luz",
+  "cameras.none": "Nenhuma câmera encontrada",
+  "light.on": "Ligar agora",
+  "light.off": "Desligar agora",
+  "tooltip": "Litra Light"
+}

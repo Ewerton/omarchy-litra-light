@@ -1,0 +1,15 @@
+{
+  "title": "Litra Light",
+  "status.on": "On",
+  "status.off": "Off",
+  "status.disabled": "Camera trigger off",
+  "trigger.label": "Turn on with camera",
+  "trigger.description": "Light on while a selected camera is in use",
+  "brightness": "Brightness",
+  "temperature": "Color temperature",
+  "cameras": "Cameras that trigger the light",
+  "cameras.none": "No cameras found",
+  "light.on": "Turn on now",
+  "light.off": "Turn off now",
+  "tooltip": "Litra Light"
+}

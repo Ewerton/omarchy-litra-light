@@ -1,0 +1,126 @@
+#!/usr/bin/env bash
+# Config helper for the Litra light plugin. The panel and the watcher both go through here.
+#
+#   litra-light-ctl get                     config as JSON, defaults filled in
+#   litra-light-ctl cameras                 connected cameras as JSON [{id,name,node}]
+#   litra-light-ctl set <key> <json-value>  set one key (enabled, brightness, temperature)
+#   litra-light-ctl camera <id> <on|off>    allow or block a camera from triggering the light
+#   litra-light-ctl light <on|off|toggle>   switch the light by hand
+
+set -euo pipefail
+
+CONF_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/litra-light"
+CONF="$CONF_DIR/config.json"
+DEFAULTS='{"enabled":true,"brightness":20,"temperature":6000,"disabledCameras":[]}'
+# "on" while the watcher holds the light for a camera, "manual" when switched by hand, else "off".
+STATE_DIR="${XDG_RUNTIME_DIR:-/tmp}/litra-light"
+STATE_FILE="$STATE_DIR/state"
+
+light_state() { cat "$STATE_FILE" 2>/dev/null || echo off; }
+
+# Push one setting to the light now. The watcher does this itself for a light it
+# turned on; a light switched on by hand has no watcher behind it.
+apply_live() {
+  local cfg
+  cfg=$(read_config)
+  case "$1" in
+    brightness)  litra brightness --percentage "$(jq -r .brightness <<<"$cfg")" ;;
+    temperature) litra temperature --value "$(jq -r .temperature <<<"$cfg")" ;;
+  esac
+}
+
+read_config() {
+  if [[ -s "$CONF" ]] && jq -e . "$CONF" >/dev/null 2>&1; then
+    jq -c --argjson d "$DEFAULTS" '$d + .' "$CONF"
+  else
+    echo "$DEFAULTS"
+  fi
+}
+
+# Write atomically so a reader never sees a half-written file.
+write_config() {
+  mkdir -p "$CONF_DIR"
+  local tmp
+  tmp=$(mktemp "$CONF_DIR/.config.XXXXXX")
+  cat >"$tmp"
+  mv "$tmp" "$CONF"
+}
+
+cameras() {
+  local link id node name
+  local first=1
+  printf '['
+  for link in /dev/v4l/by-id/*-video-index0; do
+    [[ -e "$link" ]] || continue
+    id=$(basename "$link")
+    node=$(readlink -f "$link")
+    name=$(cat "/sys/class/video4linux/${node##*/}/name" 2>/dev/null || echo "$id")
+    name=${name%%:*}
+    ((first)) || printf ','
+    first=0
+    jq -nc --arg id "$id" --arg name "$name" --arg node "$node" '{id:$id,name:$name,node:$node}'
+  done
+  printf ']\n'
+}
+
+case "${1:-}" in
+  get)
+    read_config
+    ;;
+  cameras)
+    cameras
+    ;;
+  set)
+    key=${2:?key}
+    value=${3:?json value}
+    case "$key" in
+      enabled)
+        [[ "$value" == true || "$value" == false ]] || { echo "enabled must be true or false" >&2; exit 1; } ;;
+      brightness)
+        [[ "$value" =~ ^[0-9]+$ ]] && ((value >= 1 && value <= 100)) || { echo "brightness must be 1-100" >&2; exit 1; } ;;
+      temperature)
+        [[ "$value" =~ ^[0-9]+$ ]] && ((value >= 2700 && value <= 6500 && value % 100 == 0)) || { echo "temperature must be 2700-6500 in steps of 100" >&2; exit 1; } ;;
+      *)
+        echo "unknown key: $key" >&2; exit 1 ;;
+    esac
+    read_config | jq -c --arg k "$key" --argjson v "$value" '.[$k] = $v' | write_config
+    if [[ ( "$key" == brightness || "$key" == temperature ) && "$(light_state)" == manual ]]; then
+      apply_live "$key"
+    fi
+    ;;
+  camera)
+    id=${2:?camera id}
+    state=${3:?on|off}
+    case "$state" in
+      on)  read_config | jq -c --arg id "$id" '.disabledCameras -= [$id]' | write_config ;;
+      off) read_config | jq -c --arg id "$id" '.disabledCameras = ((.disabledCameras + [$id]) | unique)' | write_config ;;
+      *)   echo "state must be on or off" >&2; exit 1 ;;
+    esac
+    ;;
+  light)
+    # Manual override, independent of the cameras. Uses the configured brightness
+    # and temperature, and records the state the panel icon follows.
+    action=${2:?on|off|toggle}
+    mkdir -p "$STATE_DIR"
+    if [[ "$action" == toggle ]]; then
+      [[ "$(light_state)" == off ]] && action=on || action=off
+    fi
+    case "$action" in
+      on)
+        litra on
+        apply_live brightness
+        apply_live temperature
+        echo manual >"$STATE_FILE"
+        ;;
+      off)
+        litra off
+        echo off >"$STATE_FILE"
+        ;;
+      *) echo "action must be on, off or toggle" >&2; exit 1 ;;
+    esac
+    ;;
+  *)
+    sed -n '2,9p' "$0" >&2
+    exit 1
+    ;;
+esac

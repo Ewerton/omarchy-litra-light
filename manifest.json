@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "ewer.litra-light",
+  "name": "Litra Light",
+  "version": "1.0.0",
+  "author": "ewer",
+  "license": "MIT",
+  "description": "Turns a Logitech Litra light on with your webcam. Pick the brightness, the color temperature and which cameras trigger it.",
+  "kinds": [
+    "bar-widget",
+    "service"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml",
+    "service": "Service.qml"
+  },
+  "barWidget": {
+    "displayName": "Litra Light",
+    "description": "Brightness, color temperature and camera trigger for the Litra light.",
+    "category": "Status",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {},
+    "schema": []
+  }
+}

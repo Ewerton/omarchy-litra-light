@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+# Turns the Litra light on while a selected webcam is open and off when none is.
+# Settings come from litra-light-ctl (~/.config/litra-light/config.json) and are
+# picked up as soon as the panel writes them; the light is updated live if it is on.
+# Runs under the plugin's Service.qml.
+
+CTL="$(dirname "$(readlink -f "$0")")/litra-light-ctl"
+CONF_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/litra-light"
+CONF="$CONF_DIR/config.json"
+STATE_DIR="${XDG_RUNTIME_DIR:-/tmp}/litra-light"
+STATE="$STATE_DIR/state"
+
+ON_DELAY=2   # ignore brief opens (apps probing the camera)
+OFF_DELAY=3  # don't turn off between back-to-back calls
+
+light_on=0
+applied=""
+cfg=""
+cfg_stamp=""
+
+set_state() { echo "$1" >"$STATE"; }
+
+# Re-read the config only when the file changed; reading it opens it, which the
+# inotify watch below would otherwise see and loop on.
+load_config() {
+  local stamp
+  stamp=$(stat -c '%y' "$CONF" 2>/dev/null || echo none)
+  [[ "$stamp" == "$cfg_stamp" ]] && return
+  cfg_stamp=$stamp
+  cfg=$("$CTL" get)
+}
+
+selected_nodes() {
+  "$CTL" cameras | jq -r --argjson c "$cfg" \
+    '.[] | select(.id as $i | ($c.disabledCameras | index($i)) | not) | .node'
+}
+
+want_light() {
+  load_config
+  [[ $(jq -r .enabled <<<"$cfg") == true ]] || return 1
+  local node
+  while read -r node; do
+    [[ -n "$node" ]] && fuser -s "$node" 2>/dev/null && return 0
+  done < <(selected_nodes)
+  return 1
+}
+
+apply_params() {
+  local params b t
+  params=$(jq -r '"\(.brightness) \(.temperature)"' <<<"$cfg")
+  [[ "$params" == "$applied" ]] && return
+  read -r b t <<<"$params"
+  litra brightness --percentage "$b"
+  litra temperature --value "$t"
+  applied=$params
+}
+
+sync_light() {
+  if want_light; then
+    if ((light_on)); then apply_params; return; fi
+    sleep "$ON_DELAY"
+    want_light || return
+    litra on
+    applied=""
+    apply_params
+    light_on=1
+    set_state on
+  else
+    ((light_on)) || return
+    sleep "$OFF_DELAY"
+    want_light && return
+    litra off
+    light_on=0
+    set_state off
+  fi
+}
+
+stop_watch() {
+  [[ -n "${WATCH_PID:-}" ]] || return 0
+  kill "$WATCH_PID" 2>/dev/null
+  wait "$WATCH_PID" 2>/dev/null
+  return 0
+}
+
+# One long-lived watch on every camera node and the config dir, so events that
+# arrive while the light is being switched queue up instead of being lost.
+start_watch() {
+  stop_watch
+  mapfile -t nodes < <("$CTL" cameras | jq -r '.[].node')
+  coproc WATCH {
+    exec inotifywait -m -q -e open,close,close_write,moved_to,delete_self \
+      "${nodes[@]}" "$CONF_DIR" 2>/dev/null
+  }
+}
+
+cleanup() {
+  stop_watch
+  exit 0
+}
+trap cleanup TERM INT
+
+mkdir -p "$STATE_DIR" "$CONF_DIR"
+set_state off
+start_watch
+
+while true; do
+  sync_light
+  if read -r -t 30 -u "${WATCH[0]}" _; then
+    # Batch the burst of events a single open/close produces.
+    while read -r -t 0.3 -u "${WATCH[0]}" _; do :; done
+  else
+    rc=$?
+    # >128 is the 30s timeout: re-list cameras in case one was plugged in.
+    # Otherwise the watch died; don't spin.
+    ((rc > 128)) || sleep 2
+    start_watch
+  fi
+done
