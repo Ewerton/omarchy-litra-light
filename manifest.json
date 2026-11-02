@@ -6,6 +6,7 @@
   "author": "ewer",
   "license": "MIT",
   "description": "Turns a Logitech Litra light on with your webcam. Pick the brightness, the color temperature and which cameras trigger it.",
+  "homepage": "https://github.com/Ewerton/omarchy-litra-light",
   "kinds": [
     "bar-widget",
     "service"
